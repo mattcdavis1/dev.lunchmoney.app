@@ -6,6 +6,7 @@ $vendorDir = dirname(dirname(__FILE__));
 $baseDir = dirname($vendorDir);
 
 return array(
+    'App\\Console\\Commands\\Transactions\\SyncUp' => $baseDir . '/app/Console/Commands/Transactions/SyncUp.php',
     'App\\Console\\Kernel' => $baseDir . '/app/Console/Kernel.php',
     'App\\Exceptions\\Handler' => $baseDir . '/app/Exceptions/Handler.php',
     'App\\Http\\Controllers\\Controller' => $baseDir . '/app/Http/Controllers/Controller.php',
@@ -18,7 +19,14 @@ return array(
     'App\\Http\\Middleware\\TrustHosts' => $baseDir . '/app/Http/Middleware/TrustHosts.php',
     'App\\Http\\Middleware\\TrustProxies' => $baseDir . '/app/Http/Middleware/TrustProxies.php',
     'App\\Http\\Middleware\\VerifyCsrfToken' => $baseDir . '/app/Http/Middleware/VerifyCsrfToken.php',
+    'App\\Models\\Account' => $baseDir . '/app/Models/Account.php',
+    'App\\Models\\AccountType' => $baseDir . '/app/Models/AccountType.php',
+    'App\\Models\\Category' => $baseDir . '/app/Models/Category.php',
+    'App\\Models\\IncomeSource' => $baseDir . '/app/Models/IncomeSource.php',
+    'App\\Models\\Transaction' => $baseDir . '/app/Models/Transaction.php',
+    'App\\Models\\TransactionSplit' => $baseDir . '/app/Models/TransactionSplit.php',
     'App\\Models\\User' => $baseDir . '/app/Models/User.php',
+    'App\\Models\\Vendor' => $baseDir . '/app/Models/Vendor.php',
     'App\\Providers\\AppServiceProvider' => $baseDir . '/app/Providers/AppServiceProvider.php',
     'App\\Providers\\AuthServiceProvider' => $baseDir . '/app/Providers/AuthServiceProvider.php',
     'App\\Providers\\BroadcastServiceProvider' => $baseDir . '/app/Providers/BroadcastServiceProvider.php',
