@@ -23,6 +23,6 @@ class TransactionSplit extends Model
 
     public function transaction()
     {
-        return $this->hasOne('App/Database/Models/Transaction', 'transaction_id', 'id');
+        return $this->hasOne('App\Models\Transaction', 'id', 'transaction_id');
     }
 }

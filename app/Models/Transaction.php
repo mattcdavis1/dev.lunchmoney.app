@@ -5,26 +5,27 @@ namespace App\Models;
 use DateTime;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Transaction extends Model
 {
     use HasFactory;
 
-    const YNAB_ACCOUNT_ID = '';
+    const YNAB_UNCATEGORIZED_ID = ['id' => '966edc65-722a-4979-8c5e-7a5fd29071ab', 'name' => 'Uncategorized'];
     const ACCOUNT_MAP = [
         88 => ['id' => '0bf963bd-539a-43ff-a1ba-bbbc9cd49a0f', 'name' => 'Ally Checking'],
         29 => ['id' => '50ef91ca-6cef-430f-a5b8-f9d37c5dc29c', 'name' => 'Alta Grove Apartments'],
         3 => ['id' => '518b9487-9c7f-4bc1-a202-408b7bd10630', 'name' => 'Ameritrade'],
         2 => ['id' => '13209970-871b-4fb3-bf31-0fe160edde56', 'name' => 'BOA Checking'],
-        8 => ['id' => 'c5d4ed0a-95e0-4c78-a734-4ffa31ec370e', 'name' => 'BOA Credit'],,
+        8 => ['id' => 'c5d4ed0a-95e0-4c78-a734-4ffa31ec370e', 'name' => 'BOA Credit'],
         1 => ['id' => '601a6bf8-8e52-4b2e-be68-6340ea826951', 'name' => 'BOA Savings'],
         81 => ['id' => '5db34709-86e4-44fe-937e-7c5816344dd2', 'name' => 'Barclay Card'],
         84 => ['id' => '9a87591f-53fa-4a20-ac3d-00555bf09b37', 'name' => 'Carolinas Healthcare'],
         4 => ['id' => '86578a0f-ee0b-488d-9131-047e0104518b', 'name' => 'Cash'],
         99 => ['id' => '383a78a5-06d3-4ec9-93cc-346132c8a211', 'name' => 'Chase Freedom'],
-        5 => ['id' => '', 'name' => ''], 'Check',
+        5 => ['id' => '57e415cf-c8c8-43a9-8297-db97f3c60312', 'name' => 'Check'], 'Check',
         37 => ['id' => 'e5c35480-d72f-4185-875f-79c5cdf15be4', 'name' => 'Citi Double Cash'],
-        21 => ['id' => '001c4201-131a-44c9-bb96-541e5eb3b32', 'name' => 'Discover'],
+        21 => ['id' => '001c4201-131a-44c9-bb96-541e5eb3b32e', 'name' => 'Discover'],
         83 => ['id' => '8c183adc-8f05-4df6-9e78-7137cc578d1b', 'name' => 'Gift Cards'],
         7 => ['id' => '8c183adc-8f05-4df6-9e78-7137cc578d1b', 'name' => 'Gift Cards'],
         36 => ['id' => '8c183adc-8f05-4df6-9e78-7137cc578d1b', 'name' => 'Gift Cards'],
@@ -211,72 +212,79 @@ class Transaction extends Model
 
     public function account()
     {
-        return $this->hasOne('App/Database/Models/Account', 'account_id', 'id');
+        return $this->hasOne('App\Models\Account', 'id', 'account_id');
     }
 
     public function category()
     {
-        return $this->hasOne('App/Database/Models/Category', 'category_id', 'id');
+        return $this->hasOne('App\Models\Category', 'id', 'category_id');
     }
 
     public function from()
     {
-        return $this->hasOne('App/Database/Models/AccountModel', 'transfer_from_account_id', 'id');
+        return $this->hasOne('App\Models\Account', 'id', 'transfer_from_account_id');
     }
 
     public function source()
     {
-        return $this->hasOne('App/Database/Models/IncomeSource', 'source_id', 'id');
+        return $this->hasOne('App\Models\IncomeSource', 'id', 'source_id');
     }
 
     public function splits()
     {
-        return $this->hasMany('App/Database/Models/TransactionSplit', 'id', 'transaction_id');
+        return $this->hasMany('App\Models\TransactionSplit', 'transaction_id', 'id');
     }
 
     public function to()
     {
-        return $this->hasOne('App/Database/Models/AccountModel', 'transfer_to_account_id', 'id');
+        return $this->hasOne('App\Models\Account', 'id', 'transfer_to_account_id');
     }
 
     public function toYnab()
     {
-        $date = new DateTime($this->date_bank_processed);
+        $dateString = $this->date_bank_processed < '2016-02-28' ? '2016-02-28' : $this->date_bank_processed;
+        $date = new DateTime($dateString);
         $vendor = $this->vendor;
-        $account = self::ACCOUNT_MAP[$this->account_id] ?? null;
-        $category = self::CATEGORY_MAP[$this->category_id] ?? null;;
+        $account = self::ACCOUNT_MAP[$this->account_id];
+        $category = self::CATEGORY_MAP[$this->category_id] ?? self::YNAB_UNCATEGORIZED_ID;
+        $amount = ((float) $this->amount) * 1000;
 
         $data = [
             'account_id' => $account['id'],
             'date' => $date->format('Y-m-d'),
-            'amount' => $this->amount * 100,
+            'amount' => round($amount, 2),
             // 'payee_id' => $payee->id,
             'payee_name' => $vendor->name ?? null,
             'category_id' => $category['id'],
-            'memo' => $this->memo,
+            'memo' => Str::limit($this->memo, 190),
             'cleared' => 'cleared',
-            'approved' => false,
+            'approved' => true,
             'flag_color' => 'red',
             'import_id' => '365budget-' . $this->id,
             'subtransactions' => [],
         ];
 
         foreach ($this->splits as $split) {
-            $subCategory = self::CATEGORY_MAP[$this->category_id] ?? null;;
+            $amount = ((float) $split->amount) * 1000;
+            if ($amount != 0) {
+                $subCategory = self::CATEGORY_MAP[$this->category_id] ?? null;
 
-            $data['subtransactions'][] = [
-                'amount' => $split->amount,
-                // 'payee_id' => $vendor->id,
-                'payee_name' => $vendor->name ?? null,
-                'category_id' => $subCategory['id'] ?? null,
-                'memo' => '',
-            ];
+                $data['subtransactions'][] = [
+                    'amount' => round($amount, 2),
+                    // 'payee_id' => $vendor->id,
+                    'payee_name' => $vendor->name ?? null,
+                    'category_id' => $subCategory['id'] ?? null,
+                    'memo' => '',
+                ];
+            }
         }
+
+        return $data;
     }
 
     public function vendor()
     {
-        return $this->hasOne('App/Database/Models/VendorModel', 'vendor_id', 'id');
+        return $this->hasOne('App\Models\Vendor', 'id', 'vendor_id');
     }
 
     protected function ynabAccount()

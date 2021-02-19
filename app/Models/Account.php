@@ -26,6 +26,6 @@ class Account extends Model
 
     public function type()
     {
-        return $this->hasOne('App/Database/Models/AccountType', 'account_type_id', 'id');
+        return $this->hasOne('App\Models\AccountType', 'id', 'account_type_id');
     }
 }
