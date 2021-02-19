@@ -6,10 +6,13 @@ use Illuminate\Console\Command;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 use App\Models\Transaction;
+use GuzzleHttp\Exception\RequestException;
 use Exception;
 
 class SyncUp extends Command
 {
+    const MODE_PATCH = 'patch';
+    const MODE_POST = 'post';
     const API_ENDPOINT = 'https://api.youneedabudget.com/v1/budgets';
     protected $signature = 'transactions:sync-up';
     protected $description = 'Sync Up Categories';
@@ -17,6 +20,8 @@ class SyncUp extends Command
 
     public function handle()
     {
+        $mode = self::MODE_PATCH;
+
         $client = new Client([
             'timeout'  => 500.0,
         ]);
@@ -26,11 +31,15 @@ class SyncUp extends Command
         $untilDate = '';
         $vendorIds = [];
 
-        $query = Transaction::whereNull('ynab_id')
-            ->where('user_id', 1)
-            ->where('id', '>=', 15862)
+        $query = Transaction::where('user_id', 1)
             ->whereIn('type', ['income', 'expense'])
             ->orderBy('transactions.date_bank_processed', 'ASC');
+
+        if ($mode == self::MODE_PATCH) {
+            $query->whereNotNull('transactions.ynab_id');
+        } else {
+            $query->whereNull('transactions.ynab_id');
+        }
 
         if ($untilDate) {
             $query->where('date_bank_processed', '<', $untilDate);
@@ -49,11 +58,12 @@ class SyncUp extends Command
         }
 
         $endpoint = self::API_ENDPOINT . '/' . env('ACCOUNT_ID') . '/transactions';
-        $numRecords = 0;
+        $numRecords = 1;
         $numRequests = 0;
 
-        $query->chunk(1000, function($transactions) use($client, $endpoint, &$numRecords, &$numRequests) {
+        $query->chunk(1000, function($transactions) use ($client, $endpoint, $mode, &$numRecords, &$numRequests) {
             $ynabTransactions = [];
+
             foreach ($transactions as $transaction) {
                 $numRecords++;
                 $amount = (float) $transaction->amount;
@@ -61,43 +71,56 @@ class SyncUp extends Command
                 if ($amount != 0) {
                     $ynabTransaction = $transaction->toYnab();
                     if (strlen($ynabTransaction['account_id']) > 5 && strlen($ynabTransaction['category_id']) > 5) {
+
+                        if ($transaction->ynab_id) {
+                            $ynabTransaction['id'] = $transaction->ynab_id;
+                        }
+
                         $ynabTransactions[] = $ynabTransaction;
                         $this->comment('[' . $numRecords . '] Adding: ' . $transaction->id . '::' . $ynabTransaction['account_id'] . '::' . $ynabTransaction['category_id'] . ' (' . $transaction->date_bank_processed . ')');
                     }
-
                 }
             }
 
-            $method = 'patch';
+            $this->info('Posting / Patching Data');
 
-            $response = $client->request('post', $endpoint, [
-                'json' => ['transactions' => $ynabTransactions ],
-                'headers' => [
-                    'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
-                ],
-            ]);
+            try {
+                $response = $client->request($mode, $endpoint, [
+                    'json' => ['transactions' => $ynabTransactions ],
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
+                    ],
+                ]);
+            } catch (RequestException $e) {
+                $this->error($e->getMessage());
+            }
 
+            $numRequests++;
             $numRecords = 0;
 
             $json = $response->getBody()->getContents();
             $responseObj = json_decode($json);
 
             $this->info('[' . $numRequests . '] Posted ' . $numRecords . ' Transactions');
-            $numRequests++;
 
-            foreach ($responseObj->data->transactions as $ynabTransaction) {
-                $this->comment('Saving YNAB Transaction: ' . $ynabTransaction->id);
 
-                $transaction->ynab_id = $ynabTransaction->id;
+            if ($mode == self::MODE_POST) {
+                foreach ($responseObj->data->transactions as $ynabTransaction) {
+                    $this->comment('Saving YNAB Transaction: ' . $ynabTransaction->id);
 
-                try {
-                    $transaction->ynab_json = json_encode($ynabTransaction);
-                } catch (Exception $e) {
-                    $this->error($e->getMessage());
+                    $transaction->ynab_id = $ynabTransaction->id;
+
+                    try {
+                        $transaction->ynab_json = json_encode($ynabTransaction);
+                    } catch (Exception $e) {
+                        $this->error($e->getMessage());
+                    }
+
+                    $transaction->save();
                 }
-
-                $transaction->save();
             }
+
+            sleep(5);
         });
 
         return 1;
