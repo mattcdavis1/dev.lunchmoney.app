@@ -43,6 +43,7 @@ class Transaction extends Model
         'use_tax',
         'import_id',
         'vendor_id',
+        'lm_amount',
         'lm_asset_id',
         'lm_category_id',
         'lm_date',

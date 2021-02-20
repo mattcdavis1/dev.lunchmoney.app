@@ -37,62 +37,67 @@ class SyncDown extends Command
         do {
             $this->info('Requesting Transactions');
 
-            $response = $client->request('get', $endpoint, [
-                'query' => [
-                    'start_date' => $startDate,,
-                    'end_date' => $endDate,,
-                ],
-                'headers' => [
-                    'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
-                ],
-            ]);
+            // $response = $client->request('get', $endpoint, [
+            //     'query' => [
+            //         'start_date' => $startDate,,
+            //         'end_date' => $endDate,,
+            //     ],
+            //     'headers' => [
+            //         'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
+            //     ],
+            // ]);
 
-            $json = $response->getBody()->getContents();
-            $responseObj = json_decode($json);
+            // $json = $response->getBody()->getContents();
+            // $responseObj = json_decode($json);
+            $responseObj = json_decode(file_get_contents(storage_path('data/transactions.json')));
             $lmTransactions = $responseObj->transactions;
 
             foreach ($lmTransactions as $lmTransaction) {
                 $i++;
 
-                $transaction = Transaction::join('accounts', 'transactions.account_id', 'accounts.id')
-                    ->where('lm_id', $lmTransaction->id)
+                $transaction = Transaction::where('transactions.lm_id', $lmTransaction->id)
                     ->first();
 
                 if (!$transaction) {
                     $dateRangeEnd = (new DateTime($lmTransaction->date))->modify('+ 3 days');
                     $dateRangeStart = (new DateTime($lmTransaction->date))->modify('- 3 days');
-                    $query = Transaction::where('amount', $lmTransaction->amount)
+                    $query = Transaction::join('accounts', 'transactions.account_id', 'accounts.id')
+                        ->select('transactions.*')
                         ->whereNested(function($query) use ($lmTransaction) {
-                            $query->where('account.lm_id', $lmTransaction->asset_id)
-                                ->orWhere('account.lm_plaid_id', $lmTransaction->plaid_account_id);
+                            $query->where('amount', $lmTransaction->amount)
+                                ->orWhere('amount', $lmTransaction->amount * -1);
                         })
-                        ->whereBetween('date', $dateRangeStart->format('Y-m-d'), $dateRangeEnd->format('Y-m-d'));
+                        ->whereNested(function($query) use ($lmTransaction) {
+                            $query->where('accounts.lm_id', $lmTransaction->asset_id)
+                                ->orWhere('accounts.lm_plaid_id', $lmTransaction->plaid_account_id);
+                        })
+                        ->whereBetween('date', [$dateRangeStart->format('Y-m-d'), $dateRangeEnd->format('Y-m-d')]);
 
                     $transactions = $query->get();
-                    $numTransactions = $transactions > 1;
+                    $numTransactions = count($transactions);
 
                     if (!$numTransactions) {
-                        $transaction = new Transaction([
-                            'amount' => $lmTransaction->date,
-                            'lm_payee' => $lmTransaction->payee,
-                            'lm_id' => $lmTransaction->id,
-                            'lm_date' => $lmTransaction->date,
-                            'lm_category_id' => $lmTransaction->category_id,
-                            'lm_asset_id' => $lmTransaction->asset_id,
-                            'lm_plaid_account_id' => $lmTransaction->plaid_account_id,
-                            'lm_status' => $lmTransaction->status,
-                            'lm_is_group' => (int) $lmTransaction->is_group,
-                            'lm_parent_id' => $lmTransaction->parent_id,
-                            'lm_external_id' => $lmTransaction->external_id,
-                            'memo' => $lmTransaction->notes,
-                        ]);
+                        $transaction = new Transaction($this->mapTransaction($lmTransaction));
                     } else if ($numTransactions > 1) {
                         $transactionOptions = [];
-                        foreach ($transactions as $_transaction) {
-                            $transactionOptions[] = '[' . $transaction->id . '] ' . $_transaction->date_bank_processed . ': ' . $transaction->memo;
-                        }
 
-                        $offset = $this->anticipate('Which Transactions?', $transactionOptions);
+                        foreach ($transactions as $_transaction) {
+                            $transactionOptions[] = '[' . $_transaction->id . '] '
+                                . 'Type: ' . ucfirst($_transaction->type)
+                                . ' | Amount: ' . $_transaction->amount
+                                . ' | Account: ' . $_transaction->account->name
+                                . ' | Date: ' . $_transaction->date_bank_processed
+                                . ' | Memo: ' . $_transaction->memo;
+                        }
+                        $transactionOptions['_'] = 'Skip';
+
+                        $this->info(PHP_EOL . json_encode($lmTransaction, JSON_PRETTY_PRINT));
+                        $offset = $this->choice('Which Transaction?', $transactionOptions);
+
+                        if ($offset === '_') {
+                            $this->comment('Skipping');
+                            continue;
+                        }
                         $transaction = $transactions[$offset] ?? null;
 
                         if (!$transaction) {
@@ -105,17 +110,35 @@ class SyncDown extends Command
                 }
 
                 if ($transaction) {
-                    $transaction->lm_id = $lmTransaction->id;
+                    $transaction->fill($this->mapTransaction($lmTransaction));
                     $transaction->lm_json = json_encode($lmTransaction);
                     $transaction->save();
 
-                    $this->comment('[' . $i . '] Saved Transaction: ' . $transaction->id . ' (' . $transaction->date_bank_processed . ')');
+                    $this->comment('[' . $i . '] Saved Transaction: ' . $lmTransaction->id . ' (' . $lmTransaction->date . ')');
                 } else {
                     $this->error('[' . $i . '] Skipped Transaction: ' . $lmTransaction->id . ' (' . $lmTransaction->date . ')');
                 }
             }
 
-            $moreTransactions = !!count($lmTransactions);
+            $moreTransactions = false;
         } while ($moreTransactions);
+    }
+
+    private function mapTransaction($lmTransaction)
+    {
+        return  [
+            'lm_amount' => $lmTransaction->amount,
+            'lm_payee' => $lmTransaction->payee,
+            'lm_id' => $lmTransaction->id,
+            'lm_date' => $lmTransaction->date,
+            'lm_category_id' => $lmTransaction->category_id,
+            'lm_asset_id' => $lmTransaction->asset_id,
+            'lm_plaid_account_id' => $lmTransaction->plaid_account_id,
+            'lm_status' => $lmTransaction->status,
+            'lm_is_group' => (int) $lmTransaction->is_group,
+            'lm_parent_id' => $lmTransaction->parent_id,
+            'lm_external_id' => $lmTransaction->external_id,
+            'memo' => $lmTransaction->notes,
+        ];
     }
 }
