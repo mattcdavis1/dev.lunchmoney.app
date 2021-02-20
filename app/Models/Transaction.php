@@ -86,44 +86,23 @@ class Transaction extends Model
         return $this->hasOne('App\Models\Account', 'id', 'transfer_to_account_id');
     }
 
-    public function toLM()
+    public function toLunch()
     {
-        $dateString = $this->date_bank_processed < '2016-02-28' ? '2016-02-28' : $this->date_bank_processed;
-        $date = new DateTime($dateString);
         $vendor = $this->vendor;
-        $account = self::ACCOUNT_MAP[$this->account_id];
-        $category = self::CATEGORY_MAP[$this->category_id] ?? self::LM_UNCATEGORIZED_ID;
-        $amount = ((float) $this->amount) * 1000;
+        $account = $this->account;
+        $vendor = $this->vendor;
+        $category = $this->category;
 
         $data = [
-            'account_id' => $account['id'],
-            'date' => $date->format('Y-m-d'),
-            'amount' => round($amount, 2),
-            // 'payee_id' => $payee->id,
-            'payee_name' => $vendor->name ?? null,
-            'category_id' => $category['id'],
-            'memo' => Str::limit($this->memo, 190),
-            'cleared' => 'cleared',
-            'approved' => true,
-            'flag_color' => 'red',
-            'import_id' => '365budget-' . $this->id,
-            'subtransactions' => [],
+            'account_id' => $account->asset_id ?? $account->plaid_account_id ?? $this->lm_asset_id ?? $this->plaid_account_id,
+            'date' => $this->lm_date ?? $this->date_bank_processed,
+            'amount' => $this->lm_amount ?? $this->amount,
+            'payee' => $vendor->name ?? $this->lm_payee ?? null,
+            'category_id' => $category->lm_id ?? $this->lm_category_id,
+            'notes' => Str::limit($this->memo, 330),
+            'status' => $this->lm_status ?? 'cleared',
+            'tags' => $category->lm_tags ?? null,
         ];
-
-        foreach ($this->splits as $split) {
-            $amount = ((float) $split->amount) * 1000;
-            if ($amount != 0) {
-                $subCategory = self::CATEGORY_MAP[$this->category_id] ?? null;
-
-                $data['subtransactions'][] = [
-                    'amount' => round($amount, 2),
-                    // 'payee_id' => $vendor->id,
-                    'payee_name' => $vendor->name ?? null,
-                    'category_id' => $subCategory['id'] ?? null,
-                    'memo' => '',
-                ];
-            }
-        }
 
         return $data;
     }
