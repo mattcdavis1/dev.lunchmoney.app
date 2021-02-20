@@ -17,7 +17,7 @@ class SyncUp extends Command
         {--category_ids=}
         {--vendor_ids=}
         {--id=}
-        {--limit=10}
+        {--limit=10000}
         {--mode=post}
     ';
     protected $description = 'Sync Up Transactions';
@@ -30,12 +30,13 @@ class SyncUp extends Command
             'timeout'  => 500.0,
         ]);
 
-        $query = Transaction::orderBy('transactions.date_bank_processed', 'ASC');
+        $query = Transaction::whereNotIn('type', ['starting-balance'])
+            ->orderBy('transactions.date_bank_processed', 'ASC');
 
         if ($mode == 'post') {
-            $query->whereNull('lm_id');
+            $query->whereNull('transactions.lm_id');
         } else {
-            $query->whereNotNull('lm_id');
+             $query->whereNotNull('transactions.lm_id');
         }
 
         if ($_categoryIds = $options['category_ids']) {
@@ -52,39 +53,39 @@ class SyncUp extends Command
             $query->where('id', $id);
         }
 
-        if ($limit = $options['limit']) {
-            $query->limit($limit);
-        }
-
+        $limit = $options['limit'];
         $numRecords = 1;
 
-        $query->chunk(1000, function($transactions) use ($mode, &$numRecords) {
+        $query->chunk(500, function($transactions) use ($mode, $limit, &$numRecords) {
             $lmTransactions = [];
 
             foreach ($transactions as $transaction) {
                 $numRecords++;
 
-                $lmTransaction = $transaction->toLunch();
+                $lmTransaction = $transaction->toLunch($mode);
+
                 $lmTransactions[] = $lmTransaction;
-                $this->comment('[' . $numRecords . '] Adding: ' . $transaction->id . '::' . $lmTransaction['account_id'] . '::' . $lmTransaction['category_id'] . ' (' . $transaction->date_bank_processed . ')');
+                $this->comment('[' . $numRecords . '] Adding: ' . $transaction->id . '::' . $lmTransaction['date'] . '::' . $lmTransaction['payee'] . ' (' . $lmTransaction['notes'] . ')');
             }
 
             $this->info('Posting / Patching Data');
 
-            $response = $this->post($mode, $transactions);
+            if ($mode == 'post') {
+                $response = $this->post($lmTransactions);
 
-            foreach ($response->transactions as $lmTransaction) {
-                $this->comment('Saving lm Transaction: ' . $lmTransaction->id);
-
-                $transaction->fill((array) $lmTransaction);
-
-                try {
-                    $transaction->lm_json = json_encode($lmTransaction);
-                } catch (Exception $e) {
-                    $this->error($e->getMessage());
+                foreach ($response->ids as $index => $id) {
+                    $transaction = $transactions[$index];
+                    $transaction->lm_id = $id;
+                    $transaction->save();
                 }
+            } else {
+                foreach ($lmTransactions as $lmTransaction) {
+                    $this->put($lmTransaction);
+                }
+            }
 
-                $transaction->save();
+            if ($numRecords >= $limit) {
+                return false;
             }
 
             sleep(3);
@@ -93,11 +94,30 @@ class SyncUp extends Command
         return 1;
     }
 
-    protected function request($mode, $lmTransactions)
+    protected function post($lmTransactions)
     {
         try {
-            $response = $this->client->request($mode, self::API_ENDPOINT, [
+            $response = $this->client->request('post', self::API_ENDPOINT, [
                 'json' => ['transactions' => $lmTransactions ],
+                'headers' => [
+                    'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
+                ],
+            ]);
+        } catch (RequestException $e) {
+            $this->error($e->getMessage());
+        }
+
+        $json = $response->getBody()->getContents();
+        $responseObj = json_decode($json);
+
+        return $responseObj;
+    }
+
+    protected function put($lmTransaction)
+    {
+        try {
+            $response = $this->client->request('put', self::API_ENDPOINT . '/' . $lmTransaction['id'], [
+                'json' => $lmTransaction,
                 'headers' => [
                     'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
                 ],

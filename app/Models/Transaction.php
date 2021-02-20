@@ -86,23 +86,43 @@ class Transaction extends Model
         return $this->hasOne('App\Models\Account', 'id', 'transfer_to_account_id');
     }
 
-    public function toLunch()
+    public function toLunch($mode = 'put')
     {
-        $vendor = $this->vendor;
-        $account = $this->account;
+        $amount = (float) ($this->lm_amount ?? $this->amount);
         $vendor = $this->vendor;
         $category = $this->category;
 
+        if ($this->type == 'transfer') {
+            $fromAccount = $this->from;
+            $toAccount = $this->to;
+            if ($amount < 0) {
+                $account = $fromAccount;
+                $payee = $toAccount->name;
+            } else {
+                $account = $toAccount;
+                $payee = $fromAccount->name;
+            }
+        } else {
+            $account = $this->account;
+            $payee = $vendor->name ?? $this->lm_payee ?? null;
+        }
+
         $data = [
-            'account_id' => $account->asset_id ?? $account->plaid_account_id ?? $this->lm_asset_id ?? $this->plaid_account_id,
+            'id' => $this->lm_id,
             'date' => $this->lm_date ?? $this->date_bank_processed,
-            'amount' => $this->lm_amount ?? $this->amount,
-            'payee' => $vendor->name ?? $this->lm_payee ?? null,
+            'amount' => $amount,
+            'payee' => $payee ?? 'N/A',
             'category_id' => $category->lm_id ?? $this->lm_category_id,
             'notes' => Str::limit($this->memo, 330),
             'status' => $this->lm_status ?? 'cleared',
             'tags' => $category->lm_tags ?? null,
+            'external_id' => $this->lm_external_id,
+            'debit_as_negative' => true,
         ];
+
+        if ($mode == 'post') {
+            $data['asset_id'] = $account->lm_asset_id;
+        }
 
         return $data;
     }
