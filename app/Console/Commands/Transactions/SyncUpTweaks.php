@@ -7,15 +7,17 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 use App\Models\Transaction;
 use GuzzleHttp\Exception\RequestException;
+use DateTime;
 use Exception;
+use Illuminate\Support\Str;
 
-class SyncUp extends Command
+class SyncUpTweaks extends Command
 {
     const MODE_PATCH = 'patch';
     const MODE_POST = 'post';
     const API_ENDPOINT = 'https://dev.lunchmoney.app/v1/transactions';
-    protected $signature = 'transactions:sync-up';
-    protected $description = 'Sync Up Transactions';
+    protected $signature = 'transactions:sync-up-tweaks';
+    protected $description = 'Sync Up Transaction Tweaks';
     protected $client = null;
 
     public function handle()
@@ -26,36 +28,12 @@ class SyncUp extends Command
             'timeout'  => 500.0,
         ]);
 
-        $accountIds = [];
-        $categoryIds = [];
-        $untilDate = '';
-        $vendorIds = [];
-
         $query = Transaction::where('user_id', 1)
             ->whereIn('type', ['income', 'expense'])
-            ->orderBy('transactions.date_bank_processed', 'ASC');
-
-        if ($mode == self::MODE_PATCH) {
-            $query->whereNotNull('transactions.lm_id');
-        } else {
-            $query->whereNull('transactions.lm_id');
-        }
-
-        if ($untilDate) {
-            $query->where('date_bank_processed', '<', $untilDate);
-        }
-
-        if ($categoryIds) {
-            $query->whereIn('category_id', '<', $categoryIds);
-        }
-
-        if ($vendorIds) {
-            $query->whereIn('vendor_id', '<', $vendorIds);
-        }
-
-        if ($accountIds) {
-            $query->whereIn('account_id', '<', $accountIds);
-        }
+            ->where('lm_date', '2016-02-28')
+            ->orderBy('transactions.date_bank_processed', 'ASC')
+            ->whereNotNull('transactions.lm_json')
+            ->whereNotNull('transactions.lm_id');
 
         $endpoint = self::API_ENDPOINT . '/' . env('ACCOUNT_ID') . '/transactions';
         $numRecords = 1;
@@ -66,20 +44,23 @@ class SyncUp extends Command
 
             foreach ($transactions as $transaction) {
                 $numRecords++;
-                $amount = (float) $transaction->amount;
+                $lm = json_decode($transaction->lm_json);
 
-                if ($amount != 0) {
-                    $lmTransaction = $transaction->tolm();
-                    if (strlen($lmTransaction['account_id']) > 5 && strlen($lmTransaction['category_id']) > 5) {
+                $date = new DateTime($transaction->date_bank_processed);
 
-                        if ($transaction->lm_id) {
-                            $lmTransaction['id'] = $transaction->lm_id;
-                        }
+                $memo = Str::limit($lm->memo, 180);
+                $memo = '[' . $date->format('Y-m-d') . '] ' . $memo;
 
-                        $lmTransactions[] = $lmTransaction;
-                        $this->comment('[' . $numRecords . '] Adding: ' . $transaction->id . '::' . $lmTransaction['account_id'] . '::' . $lmTransaction['category_id'] . ' (' . $transaction->date_bank_processed . ')');
-                    }
-                }
+                $lmTransaction = [
+                    'id' => $lm->id,
+                    'date' => $transaction->lm_date,
+                    'amount' => $lm->amount,
+                    'account_id' => $lm->account_id,
+                    'memo' => trim($memo),
+                ];
+
+                $lmTransactions[] = $lmTransaction;
+                $this->comment('[' . $numRecords . '] Adding: ' . $transaction->id . ' (' . $transaction->date_bank_processed . ')');
             }
 
             $this->info('Posting / Patching Data');
@@ -101,7 +82,7 @@ class SyncUp extends Command
             $json = $response->getBody()->getContents();
             $responseObj = json_decode($json);
 
-            $this->info('[' . $numRequests . '] Posted ' . $numRecords . ' Transactions');
+            $this->info('[' . $numRequests . '] Post Transactions Success');
 
 
             if ($mode == self::MODE_POST) {

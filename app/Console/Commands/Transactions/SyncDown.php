@@ -11,53 +11,67 @@ use DateTime;
 
 class SyncDown extends Command
 {
-    const API_ENDPOINT = 'https://api.youneedabudget.com/v1/budgets';
+    const API_ENDPOINT = 'https://dev.lunchmoney.app/v1/transactions';
     protected $signature = 'transactions:sync-down';
-    protected $description = 'Sync Up Categories';
+    protected $description = 'Sync Down Transactions';
     protected $client = null;
 
     public function handle()
     {
         $client = new Client([
-            'timeout'  => 500.0,
+            'timeout'  => 10.0,
         ]);
-        $endpoint = self::API_ENDPOINT . '/' . env('ACCOUNT_ID') . '/transactions';
+
+        $endpoint = self::API_ENDPOINT;
         $i = 0;
-        $lastSinceDate = '2000-01-01';
+        $startDate = '2000-01-01';
+        $endDate = date('Y-m-d');
+        $limit = 1000;
+        $offset = 0;
+        $assetId = null;
+        $categoryId = null;
+        $plaidAccountId = null;
+        $recurringId = null;
+        $tagId = null;
 
         do {
-            $sinceDate = (new DateTime($lastSinceDate))->modify('+ 1 day');
-
             $this->info('Requesting Transactions');
 
             $response = $client->request('get', $endpoint, [
-                'query' => ['since_date' => $sinceDate->format('Y-m-d')],
+                'query' => [
+                    'start_date' => $startDate,,
+                    'end_date' => $endDate,,
+                ],
                 'headers' => [
                     'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
                 ],
             ]);
+
             $json = $response->getBody()->getContents();
             $responseObj = json_decode($json);
-            $ynabTransactions = $responseObj->data->transactions;
+            $lmTransactions = $responseObj->transactions;
 
-            foreach ($ynabTransactions as $ynabTransaction) {
+            foreach ($lmTransactions as $lmTransaction) {
                 $i++;
-                $transactionId = str_replace('365budget-', '', $ynabTransaction->import_id);
+
+                $transactionId = str_replace('datacode-', '', $lmTransaction->import_id);
                 $transaction = Transaction::find($transactionId);
                 if ($transaction) {
-                    $transaction->ynab_id = $ynabTransaction->id;
-                    $transaction->ynab_json = json_encode($ynabTransaction);
+                    $transaction->lm_amount = $lmTransaction->amount;
+                    $transaction->lm_date = $lmTransaction->date;
+                    $transaction->lm_id = $lmTransaction->id;
+                    $transaction->lm_json = json_encode($lmTransaction);
                     $transaction->save();
 
                     $this->comment('[' . $i . '] Saved Transaction: ' . $transaction->id . ' (' . $transaction->date_bank_processed . ')');
                 } else {
-                    $this->error('[' . $i . '] Skipped Transaction: ' . $ynabTransaction->id . ' (' . $ynabTransaction->date . ')');
+                    $this->error('[' . $i . '] Skipped Transaction: ' . $lmTransaction->id . ' (' . $lmTransaction->date . ')');
                 }
 
-                $lastSinceDate = $ynabTransaction->date;
+                $lastSinceDate = $lmTransaction->date;
             }
 
-            $moreTransactions = !!count($ynabTransactions);
+            $moreTransactions = !!count($lmTransactions);
         } while ($moreTransactions);
     }
 }

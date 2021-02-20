@@ -11,7 +11,7 @@ class Transaction extends Model
 {
     use HasFactory;
 
-    const YNAB_UNCATEGORIZED_ID = ['id' => '966edc65-722a-4979-8c5e-7a5fd29071ab', 'name' => 'Uncategorized'];
+    const LM_UNCATEGORIZED_ID = ['id' => '966edc65-722a-4979-8c5e-7a5fd29071ab', 'name' => 'Uncategorized'];
     const ACCOUNT_MAP = [
         88 => ['id' => '0bf963bd-539a-43ff-a1ba-bbbc9cd49a0f', 'name' => 'Ally Checking'],
         29 => ['id' => '50ef91ca-6cef-430f-a5b8-f9d37c5dc29c', 'name' => 'Alta Grove Apartments'],
@@ -207,7 +207,7 @@ class Transaction extends Model
         'use_tax',
         'import_id',
         'vendor_id',
-        'ynab_id',
+        'LM_id',
     ];
 
     public function account()
@@ -240,13 +240,13 @@ class Transaction extends Model
         return $this->hasOne('App\Models\Account', 'id', 'transfer_to_account_id');
     }
 
-    public function toYnab()
+    public function toLM()
     {
         $dateString = $this->date_bank_processed < '2016-02-28' ? '2016-02-28' : $this->date_bank_processed;
         $date = new DateTime($dateString);
         $vendor = $this->vendor;
         $account = self::ACCOUNT_MAP[$this->account_id];
-        $category = self::CATEGORY_MAP[$this->category_id] ?? self::YNAB_UNCATEGORIZED_ID;
+        $category = self::CATEGORY_MAP[$this->category_id] ?? self::LM_UNCATEGORIZED_ID;
         $amount = ((float) $this->amount) * 1000;
 
         $data = [
@@ -287,7 +287,7 @@ class Transaction extends Model
         return $this->hasOne('App\Models\Vendor', 'id', 'vendor_id');
     }
 
-    protected function ynabAccount()
+    protected function LMAccount()
     {
         $id = null;
         $name = null;
