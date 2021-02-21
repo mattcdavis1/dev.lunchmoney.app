@@ -107,21 +107,52 @@ class Transaction extends Model
             $payee = $vendor->name ?? $this->lm_payee ?? null;
         }
 
+        $date = $this->date ?? $this->lm_date;
+
         $data = [
             'id' => $this->lm_id,
-            'date' => $this->lm_date ?? $this->date_bank_processed,
-            'amount' => $amount,
+            'date' => $date,
+            'amount' => $account->invert_amount ? $amount * -1 : $amount,
             'payee' => $payee ?? 'N/A',
             'category_id' => $category->lm_id ?? $this->lm_category_id,
             'notes' => Str::limit($this->memo, 330),
             'status' => $this->lm_status ?? 'cleared',
-            'tags' => $category->lm_tags ?? null,
-            'external_id' => $this->lm_external_id,
             'debit_as_negative' => true,
         ];
 
+        $tags = $category->lm_tag_ids ?? null;
+        if ($tags) {
+            $tagArrString = explode(',', $tags);
+            $tagArrInt = [];
+            foreach ($tagArrString as $tagId) {
+                $tagArrInt[] = (int) $tagId;
+            }
+            $data['tags'] = $tagArrInt;
+        }
+
+        if ($this->lm_external_id) {
+            $data['external_id'] = $this->lm_external_id;
+        }
+
         if ($mode == 'post') {
             $data['asset_id'] = $account->lm_asset_id;
+        } else {
+            $splits = $this->splits;
+
+            if (count($splits)) {
+                $data['split'] = [];
+
+                foreach ($splits as $split) {
+                    $splitAmount = (float) $split->amount;
+                    $splitCategory = $split->category;
+
+                    $data['split'][] = [
+                        'date' => $date,
+                        'category_id' => $splitCategory->lm_id,
+                        'amount' => $account->invert_amount ? $splitAmount * -1 : $splitAmount,
+                    ];
+                }
+            }
         }
 
         return $data;

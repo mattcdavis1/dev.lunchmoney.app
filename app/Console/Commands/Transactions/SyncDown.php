@@ -89,7 +89,7 @@ class SyncDown extends Command
                                     . 'Type: ' . ucfirst($_transaction->type)
                                     . ' | Amount: ' . $_transaction->amount
                                     . ' | Account: ' . $_transaction->account->name
-                                    . ' | Date: ' . $_transaction->date_bank_processed
+                                    . ' | Date: ' . $_transaction->date
                                     . ' | Memo: ' . $_transaction->memo;
                             }
                             $transactionOptions['_'] = 'Skip';

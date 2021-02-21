@@ -4,20 +4,18 @@ namespace App\Console\Commands\Transactions;
 
 use Illuminate\Console\Command;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\ClientException;
 use App\Models\Transaction;
 use GuzzleHttp\Exception\RequestException;
 use Exception;
-use Illuminate\Support\Arr;
 
-class SyncUp extends Command
+class SyncUpSplits extends Command
 {
     const API_ENDPOINT = 'https://dev.lunchmoney.app/v1/transactions';
     protected $client;
-    protected $signature = 'transactions:sync-up
+    protected $signature = 'transactions:sync-up-splits
         {--category_ids=}
         {--vendor_ids=}
-        {--account_ids=2}
+        {--account_ids=}
         {--id=}
         {--limit=10000}
         {--mode=put}
@@ -26,6 +24,7 @@ class SyncUp extends Command
 
     public function handle()
     {
+        die();
         $options = $this->options();
         $mode = $options['mode'];
         $this->client = new Client([
@@ -33,7 +32,7 @@ class SyncUp extends Command
         ]);
 
         $query = Transaction::whereNotIn('type', ['starting-balance'])
-            ->orderBy('transactions.date', 'ASC')
+            ->orderBy('transactions.date_bank_processed', 'ASC')
             ->select('transactions.*');
 
         if ($mode == 'post') {
@@ -52,16 +51,16 @@ class SyncUp extends Command
             $query->whereIn('category_id', $categoryIds);
         }
 
-        if ($_vendorIds = $options['vendor_ids']) {
+        if ($_vendorIds = $options['category_ids']) {
             $vendorIds = explode(',', $_vendorIds);
-            $query->whereIn('vendor_id', $vendorIds);
+            $query->whereIn('category_id', $vendorIds);
         }
 
         if ($id = $options['id']) {
             $query->where('id', $id);
         }
 
-        $limit = (int) $options['limit'];
+        $limit = $options['limit'];
         $numRecords = 1;
 
         $query->chunk(500, function($transactions) use ($mode, $limit, &$numRecords) {
@@ -76,8 +75,9 @@ class SyncUp extends Command
                 $this->comment('[' . $numRecords . '] Adding: ' . $transaction->id . '::' . $lmTransaction['date'] . '::' . $lmTransaction['payee'] . ' (' . $lmTransaction['notes'] . ')');
             }
 
+            $this->info('Posting / Patching Data');
+
             if ($mode == 'post') {
-                $this->info('POST-ing');
                 $response = $this->post($lmTransactions);
 
                 foreach ($response->ids as $index => $id) {
@@ -87,19 +87,7 @@ class SyncUp extends Command
                 }
             } else {
                 foreach ($lmTransactions as $lmTransaction) {
-                    $this->comment('PUT-ting: ' . $lmTransaction['id'] . ':' . $lmTransaction['date']);
-                    $response = $this->put($lmTransaction);
-                    $responseSplits = $response->split ?? [];
-
-                    if ($responseSplits) {
-                        $transaction = Transaction::where('lm_id', $lmTransaction['id'])->first();
-                        $splits = $transaction->splits;
-
-                        foreach ($splits as $index => $split) {
-                            $split->lm_id = $responseSplits[$index] ?? null;
-                            $split->save();
-                        }
-                    }
+                    $this->put($lmTransaction);
                 }
             }
 
@@ -117,7 +105,7 @@ class SyncUp extends Command
     {
         try {
             $response = $this->client->request('post', self::API_ENDPOINT, [
-                'json' => [ 'transactions' => $lmTransactions ],
+                'json' => ['transactions' => $lmTransactions ],
                 'headers' => [
                     'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
                 ],
@@ -132,13 +120,11 @@ class SyncUp extends Command
         return $responseObj;
     }
 
-    protected function put($_lmTransaction)
+    protected function put($lmTransaction)
     {
-        $lmTransaction = Arr::except($_lmTransaction, ['id']);
-
         try {
-            $response = $this->client->request('put', self::API_ENDPOINT . '/' . $_lmTransaction['id'], [
-                'json' => ['transaction' => $lmTransaction ],
+            $response = $this->client->request('put', self::API_ENDPOINT . '/' . $lmTransaction['id'], [
+                'json' => $lmTransaction,
                 'headers' => [
                     'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
                 ],
