@@ -41,6 +41,7 @@ class SyncDown extends Command
                 'query' => [
                     'start_date' => $startDate,
                     'end_date' => $endDate,
+                    'plaid_account_id' => 25385,
                 ],
                 'headers' => [
                     'Authorization' => 'Bearer ' . env('ACCESS_TOKEN'),
@@ -62,8 +63,8 @@ class SyncDown extends Command
                     $transaction = Transaction::where('lm_external_id', $lmTransaction->external_id)->first();
 
                     if (!$transaction) {
-                        $dateRangeEnd = (new DateTime($lmTransaction->date))->modify('+ 3 days');
-                        $dateRangeStart = (new DateTime($lmTransaction->date))->modify('- 3 days');
+                        $dateRangeEnd = (new DateTime($lmTransaction->date))->modify('+ 1 days');
+                        $dateRangeStart = (new DateTime($lmTransaction->date))->modify('- 1 days');
                         $query = Transaction::join('accounts', 'transactions.account_id', 'accounts.id')
                             ->select('transactions.*')
                             ->whereNested(function($query) use ($lmTransaction) {

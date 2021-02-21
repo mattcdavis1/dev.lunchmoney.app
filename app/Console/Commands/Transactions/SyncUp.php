@@ -17,7 +17,8 @@ class SyncUp extends Command
     protected $signature = 'transactions:sync-up
         {--category_ids=}
         {--vendor_ids=}
-        {--account_ids=2}
+        {--account_ids=}
+        {--plaid_account_ids=25385}
         {--id=}
         {--limit=10000}
         {--mode=put}
@@ -40,6 +41,11 @@ class SyncUp extends Command
             $query->whereNull('transactions.lm_id');
         } else {
              $query->whereNotNull('transactions.lm_id');
+        }
+
+        if ($_plaidAccountIds = $options['plaid_account_ids']) {
+            $plaidAccountIds = explode(',', $_plaidAccountIds);
+            $query->whereIn('lm_plaid_account_id', $plaidAccountIds);
         }
 
         if ($_accountIds = $options['account_ids']) {
@@ -70,10 +76,15 @@ class SyncUp extends Command
             foreach ($transactions as $transaction) {
                 $numRecords++;
 
+                // $splits = $transaction->splits;
+                // if (!count($splits)) {
+                //     continue;
+                // }
+
                 $lmTransaction = $transaction->toLunch($mode);
 
                 $lmTransactions[] = $lmTransaction;
-                $this->comment('[' . $numRecords . '] Adding: ' . $transaction->id . '::' . $lmTransaction['date'] . '::' . $lmTransaction['payee'] . ' (' . $lmTransaction['notes'] . ')');
+                $this->comment('[' . $numRecords . '] Adding: ' . $transaction->id . '::' . ($lmTransaction['date'] ?? $transaction->date) . '::' . $lmTransaction['payee'] . ' (' . $lmTransaction['notes'] . ')');
             }
 
             if ($mode == 'post') {
@@ -87,7 +98,7 @@ class SyncUp extends Command
                 }
             } else {
                 foreach ($lmTransactions as $lmTransaction) {
-                    $this->comment('PUT-ting: ' . $lmTransaction['id'] . ':' . $lmTransaction['date']);
+                    $this->comment('PUT-ting: ' . $lmTransaction['id'] . ':' . ($lmTransaction['date'] ?? 'No Date for Plaid'));
                     $response = $this->put($lmTransaction);
                     $responseSplits = $response->split ?? [];
 

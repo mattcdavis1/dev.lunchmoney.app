@@ -111,14 +111,21 @@ class Transaction extends Model
 
         $data = [
             'id' => $this->lm_id,
-            'date' => $date,
-            'amount' => $account->invert_amount ? $amount * -1 : $amount,
             'payee' => $payee ?? 'N/A',
             'category_id' => $category->lm_id ?? $this->lm_category_id,
             'notes' => Str::limit($this->memo, 330),
             'status' => $this->lm_status ?? 'cleared',
-            'debit_as_negative' => true,
+            'debit_as_negative' => false,
         ];
+
+        if (!$this->lm_plaid_account_id) {
+            $data['amount'] = $account->invert_amount ? $amount * -1 : $amount;
+            $data['date'] = $date;
+
+            if ($this->lm_external_id) {
+                $data['external_id'] = $this->lm_external_id;
+            }
+        }
 
         $tags = $category->lm_tag_ids ?? null;
         if ($tags) {
@@ -128,10 +135,6 @@ class Transaction extends Model
                 $tagArrInt[] = (int) $tagId;
             }
             $data['tags'] = $tagArrInt;
-        }
-
-        if ($this->lm_external_id) {
-            $data['external_id'] = $this->lm_external_id;
         }
 
         if ($mode == 'post') {
@@ -145,11 +148,12 @@ class Transaction extends Model
                 foreach ($splits as $split) {
                     $splitAmount = (float) $split->amount;
                     $splitCategory = $split->category;
+                    $splitAmountAdj = $account->invert_amount ? $splitAmount :  $splitAmount * -1;
 
                     $data['split'][] = [
                         'date' => $date,
                         'category_id' => $splitCategory->lm_id,
-                        'amount' => $account->invert_amount ? $splitAmount * -1 : $splitAmount,
+                        'amount' => $splitAmountAdj,
                     ];
                 }
             }
