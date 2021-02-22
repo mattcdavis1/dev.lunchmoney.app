@@ -111,16 +111,19 @@ class Transaction extends Model
 
         $data = [
             'id' => $this->lm_id,
-            'payee' => $payee ?? 'N/A',
-            'category_id' => $category->lm_id ?? $this->lm_category_id,
-            'notes' => Str::limit($this->memo, 330),
-            'status' => $this->lm_status ?? 'cleared',
-            'debit_as_negative' => false,
+            // 'payee' => $payee ?? 'N/A',
+            // 'notes' => Str::limit($this->memo, 330),
+            // 'status' => $this->lm_status ?? 'cleared',
+            // 'debit_as_negative' => false,
         ];
 
+        if ($this->category_id) {
+            $data['category_id'] = $category->lm_id ?? $this->lm_category_id ?? null;
+        }
+
         if (!$this->lm_plaid_account_id) {
-            $data['amount'] = $account->invert_amount ? $amount * -1 : $amount;
-            $data['date'] = $date;
+            // $data['amount'] = $account->invert_amount ? $amount * -1 : $amount;
+            // $data['date'] = $date;
 
             if ($this->lm_external_id) {
                 $data['external_id'] = $this->lm_external_id;
@@ -140,23 +143,23 @@ class Transaction extends Model
         if ($mode == 'post') {
             $data['asset_id'] = $account->lm_asset_id;
         } else {
-            $splits = $this->splits;
+            // $splits = $this->splits;
 
-            if (count($splits)) {
-                $data['split'] = [];
+            // if (count($splits)) {
+            //     $data['split'] = [];
 
-                foreach ($splits as $split) {
-                    $splitAmount = (float) $split->amount;
-                    $splitCategory = $split->category;
-                    $splitAmountAdj = $account->invert_amount ? $splitAmount :  $splitAmount * -1;
+            //     foreach ($splits as $split) {
+            //         $splitAmount = (float) $split->amount;
+            //         $splitCategory = $split->category;
+            //         $splitAmountAdj = $account->invert_amount ? $splitAmount * - 1:  $splitAmount;
 
-                    $data['split'][] = [
-                        'date' => $date,
-                        'category_id' => $splitCategory->lm_id,
-                        'amount' => $splitAmountAdj,
-                    ];
-                }
-            }
+            //         $data['split'][] = [
+            //             'date' => $date,
+            //             'category_id' => $splitCategory->lm_id,
+            //             'amount' => $splitAmountAdj,
+            //         ];
+            //     }
+            // }
         }
 
         return $data;

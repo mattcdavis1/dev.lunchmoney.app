@@ -22,6 +22,7 @@ class SyncUpTweaks extends Command
 
     public function handle()
     {
+        die();
         $mode = self::MODE_PATCH;
 
         $client = new Client([

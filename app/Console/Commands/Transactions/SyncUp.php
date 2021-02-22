@@ -17,8 +17,8 @@ class SyncUp extends Command
     protected $signature = 'transactions:sync-up
         {--category_ids=}
         {--vendor_ids=}
-        {--account_ids=}
-        {--plaid_account_ids=25385}
+        {--account_ids=2}
+        {--plaid_account_ids=}
         {--id=}
         {--limit=10000}
         {--mode=put}
@@ -27,6 +27,7 @@ class SyncUp extends Command
 
     public function handle()
     {
+        die();
         $options = $this->options();
         $mode = $options['mode'];
         $this->client = new Client([
@@ -35,7 +36,9 @@ class SyncUp extends Command
 
         $query = Transaction::whereNotIn('type', ['starting-balance'])
             ->orderBy('transactions.date', 'ASC')
-            ->select('transactions.*');
+            ->select('transactions.*')
+            ->where('type', 'expense')
+            ->where('memo', 'LIKE', '%check%');
 
         if ($mode == 'post') {
             $query->whereNull('transactions.lm_id');
